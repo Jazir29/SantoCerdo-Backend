@@ -10,7 +10,7 @@ const pool = mysql.createPool({
   password: process.env.DB_PASSWORD || '',
   database: process.env.DB_NAME     || 'santocerdo',
   waitForConnections: true,
-  connectionLimit: 10,
+  connectionLimit: 5,
   charset: 'utf8mb4',
   // Convierte automáticamente DATETIME de MySQL a string ISO
   dateStrings: false,
