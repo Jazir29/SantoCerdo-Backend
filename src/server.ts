@@ -9,6 +9,8 @@ import customerRoutes   from './routes/customers.routes';
 import orderRoutes      from './routes/orders.routes';
 import promotionRoutes  from './routes/promotions.routes';
 import statsRoutes      from './routes/stats.routes';
+import batchesRouter from './routes/batches.routes';
+
 
 dotenv.config();
 
@@ -31,6 +33,7 @@ app.use('/api/customers',  authMiddleware, customerRoutes);
 app.use('/api/orders',     authMiddleware, orderRoutes);
 app.use('/api/promotions', authMiddleware, promotionRoutes);
 app.use('/api/stats',      authMiddleware, statsRoutes);
+app.use('/api/batches', authMiddleware, batchesRouter);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -46,5 +49,7 @@ app.use((_req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ Backend corriendo en http://localhost:${PORT}`);
 });
+
+
 
 export default app;
