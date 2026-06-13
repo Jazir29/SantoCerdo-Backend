@@ -4,6 +4,11 @@ import jwt from 'jsonwebtoken';
 import pool from '../config/db';
 import { authMiddleware } from '../middlewares/auth';
 
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required');
+}
+
 const router = Router();
 
 // ── Helper: construir nombre completo ────────────────────────
@@ -44,7 +49,6 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       return;
     }
 
-    const secret     = process.env.JWT_SECRET || 'fallback_secret';
     const expiresIn  = process.env.JWT_EXPIRES_IN || '8h';
     const userPayload = {
       id:         user.id,
@@ -55,7 +59,7 @@ router.post('/login', async (req: Request, res: Response): Promise<void> => {
       role:       user.role,
     };
 
-    const token = jwt.sign(userPayload, secret, { expiresIn } as jwt.SignOptions);
+    const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
 
     res.json({ success: true, token, user: userPayload });
   } catch (error) {
