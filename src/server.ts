@@ -1,5 +1,6 @@
 import express from 'express';
 import cors from 'cors';
+import helmet from 'helmet';
 import dotenv from 'dotenv';
 
 import { authMiddleware } from './middlewares/auth';
@@ -18,6 +19,7 @@ const app  = express();
 const PORT = Number(process.env.PORT) || 4000;
 
 // ── Middlewares globales ───────────────────────────────────────
+app.use(helmet());
 app.use(cors({
   origin: process.env.FRONTEND_URL || 'http://localhost:3000',
   credentials: true,
