@@ -201,6 +201,18 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 
     for (const item of items) {
       const unitPrice = priceMap.get(Number(item.product_id))!;
+
+      // C4: bloquear fila y validar stock suficiente
+      const [stockRows] = await conn.query(
+        'SELECT stock FROM products WHERE id = ? FOR UPDATE',
+        [item.product_id]
+      ) as any[];
+      if (!stockRows[0] || stockRows[0].stock < item.quantity) {
+        await conn.rollback();
+        res.status(400).json({ message: `Stock insuficiente para el producto ${item.product_id}` });
+        return;
+      }
+
       await conn.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
          VALUES (?, ?, ?, ?, ?, ?)`,
@@ -305,6 +317,18 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 
     for (const item of items) {
       const unitPrice = priceMap.get(Number(item.product_id))!;
+
+      // C4: bloquear fila y validar stock suficiente
+      const [stockRows] = await conn.query(
+        'SELECT stock FROM products WHERE id = ? FOR UPDATE',
+        [item.product_id]
+      ) as any[];
+      if (!stockRows[0] || stockRows[0].stock < item.quantity) {
+        await conn.rollback();
+        res.status(400).json({ message: `Stock insuficiente para el producto ${item.product_id}` });
+        return;
+      }
+
       await conn.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
          VALUES (?, ?, ?, ?, ?, ?)`,
