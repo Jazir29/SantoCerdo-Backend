@@ -4,6 +4,22 @@ import { PoolConnection } from 'mysql2/promise';
 
 const router = Router();
 
+// ── Helper: obtener precios reales desde la BD ───────────────
+async function fetchPrices(
+  conn: PoolConnection,
+  productIds: number[]
+): Promise<Map<number, number>> {
+  if (!productIds.length) return new Map();
+  const placeholders = productIds.map(() => '?').join(',');
+  const [rows] = await conn.query(
+    `SELECT id, price FROM products WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
+    productIds
+  ) as any[];
+  const map = new Map<number, number>();
+  for (const row of rows) map.set(Number(row.id), Number(row.price));
+  return map;
+}
+
 // ── Helper: aplicar promoción ────────────────────────────────
 async function applyPromotion(
   conn: PoolConnection,
@@ -151,8 +167,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       );
     }
 
-    const subtotal: number = items.reduce(
-      (acc: number, item: any) => acc + item.price * item.quantity, 0
+    // C3: obtener precios reales desde la BD, ignorar el precio del cliente
+    const productIds = [...new Set((items as any[]).map((i: any) => Number(i.product_id)))];
+    const priceMap = await fetchPrices(conn, productIds);
+    for (const item of items) {
+      if (!priceMap.has(Number(item.product_id))) {
+        await conn.rollback();
+        res.status(400).json({ message: `Producto ${item.product_id} no encontrado` });
+        return;
+      }
+    }
+
+    const subtotal: number = (items as any[]).reduce(
+      (acc: number, item: any) => acc + priceMap.get(Number(item.product_id))! * item.quantity, 0
     );
     const { finalTotal, discountAmount, validPromoId } =
       await applyPromotion(conn, promotion_id || null, subtotal);
@@ -173,10 +200,11 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     const orderId = orderResult.insertId;
 
     for (const item of items) {
+      const unitPrice = priceMap.get(Number(item.product_id))!;
       await conn.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [orderId, item.product_id, item.quantity, item.price, userId, userId]
+        [orderId, item.product_id, item.quantity, unitPrice, userId, userId]
       );
       await conn.query(
         'UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?',
@@ -245,8 +273,19 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 
     await conn.query('DELETE FROM order_items WHERE order_id = ?', [orderId]);
 
-    const subtotal: number = items.reduce(
-      (acc: number, item: any) => acc + item.price * item.quantity, 0
+    // C3: obtener precios reales desde la BD, ignorar el precio del cliente
+    const productIds = [...new Set((items as any[]).map((i: any) => Number(i.product_id)))];
+    const priceMap = await fetchPrices(conn, productIds);
+    for (const item of items) {
+      if (!priceMap.has(Number(item.product_id))) {
+        await conn.rollback();
+        res.status(400).json({ message: `Producto ${item.product_id} no encontrado` });
+        return;
+      }
+    }
+
+    const subtotal: number = (items as any[]).reduce(
+      (acc: number, item: any) => acc + priceMap.get(Number(item.product_id))! * item.quantity, 0
     );
     const { finalTotal, discountAmount, validPromoId } =
       await applyPromotion(conn, promotion_id || null, subtotal);
@@ -265,10 +304,11 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
     );
 
     for (const item of items) {
+      const unitPrice = priceMap.get(Number(item.product_id))!;
       await conn.query(
         `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
          VALUES (?, ?, ?, ?, ?, ?)`,
-        [orderId, item.product_id, item.quantity, item.price, userId, userId]
+        [orderId, item.product_id, item.quantity, unitPrice, userId, userId]
       );
       await conn.query(
         'UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?',
