@@ -78,7 +78,7 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 });
 
 // ── GET /api/users ───────────────────────────────────────────
-router.get('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.get('/users', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   try {
     const [rows] = await pool.query(
       'SELECT id, username, name, first_name, last_name, role FROM users WHERE deleted_at IS NULL ORDER BY id ASC'
@@ -90,7 +90,7 @@ router.get('/users', authMiddleware, async (req: Request, res: Response): Promis
 });
 
 // ── POST /api/users ──────────────────────────────────────────
-router.post('/users', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.post('/users', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const { username, password, first_name, last_name, role } = req.body;
   const createdBy = (req as any).user?.id;
 
@@ -133,7 +133,7 @@ router.post('/users', authMiddleware, async (req: Request, res: Response): Promi
 });
 
 // ── PUT /api/users/:id ───────────────────────────────────────
-router.put('/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/users/:id', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const id        = Number(req.params.id);
   const updatedBy = (req as any).user?.id;
   const { username, first_name, last_name, role, password } = req.body;
@@ -219,7 +219,7 @@ router.put('/users/:id/profile', authMiddleware, async (req: Request, res: Respo
 });
 
 // ── DELETE /api/users/:id ────────────────────────────────────
-router.delete('/users/:id', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.delete('/users/:id', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const id        = Number(req.params.id);
   const deletedBy = (req as any).user?.id;
 

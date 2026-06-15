@@ -22,6 +22,15 @@ declare global {
   }
 }
 
+export const requireRole = (...roles: string[]) =>
+  (req: Request, res: Response, next: NextFunction): void => {
+    if (!req.user || !roles.includes(req.user.role)) {
+      res.status(403).json({ message: 'No autorizado' });
+      return;
+    }
+    next();
+  };
+
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
   const authHeader = req.headers['authorization'];
 

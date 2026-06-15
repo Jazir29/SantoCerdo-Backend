@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/db';
+import { requireRole } from '../middlewares/auth';
 
 const router = Router();
 
@@ -34,7 +35,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/products
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const { name, description, price, cost, stock, category, image_url, weight_grams } = req.body;
   const userId = req.user!.id;
 
@@ -64,7 +65,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/products/batches/new-product
-router.post('/batches/new-product', async (req: Request, res: Response): Promise<void> => {
+router.post('/batches/new-product', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const {
     name, category,
@@ -136,7 +137,7 @@ router.post('/batches/new-product', async (req: Request, res: Response): Promise
 });
 
 // PUT /api/products/:id
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const { name, description, price, cost, stock, category, image_url, weight_grams } = req.body;
   const userId = req.user!.id;
 
@@ -157,7 +158,7 @@ router.put('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // DELETE /api/products/:id
-router.delete('/:id', async (req: Request, res: Response): Promise<void> => {
+router.delete('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
 
   try {
@@ -218,7 +219,7 @@ async function getBatchWithDetails(conn: any, batchId: number) {
 }
 
 // POST /api/products/:id/batches
-router.post('/:id/batches', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/batches', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
   const productId = Number(req.params.id);
   const userId = req.user!.id;
   const {
