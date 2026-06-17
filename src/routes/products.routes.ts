@@ -69,16 +69,21 @@ router.post('/batches/new-product', requireRole('admin'), async (req: Request, r
   const userId = req.user!.id;
   const {
     name, category,
-    batch_yield_grams, unit_weight_grams, units_produced,
-    total_ingredients_cost, total_operations_cost, total_batch_cost,
-    cost_per_unit, price_per_unit, margin_percent,
+    batch_yield_grams, unit_weight_grams,
+    price_per_unit,
     ingredients_detail, operations_detail, notes
   } = req.body;
 
-  if (!name || !price_per_unit || !cost_per_unit) {
-    res.status(400).json({ message: 'Nombre, precio y costo son requeridos' });
+  if (!name || !price_per_unit) {
+    res.status(400).json({ message: 'Nombre y precio son requeridos' });
     return;
   }
+
+  // H4: recalcular costos en el backend, ignorar valores del cliente
+  const computed = computeBatchCosts(
+    ingredients_detail, operations_detail,
+    batch_yield_grams, unit_weight_grams, price_per_unit
+  );
 
   const conn = await pool.getConnection();
   try {
@@ -92,8 +97,8 @@ router.post('/batches/new-product', requireRole('admin'), async (req: Request, r
       [
         name,
         `Manteca artesanal ${unit_weight_grams}g`,
-        price_per_unit, cost_per_unit,
-        unit_weight_grams, units_produced,
+        price_per_unit, computed.costPerUnit,
+        unit_weight_grams, computed.unitsProduced,
         category ?? null, userId, userId
       ]
     ) as any[];
@@ -108,9 +113,9 @@ router.post('/batches/new-product', requireRole('admin'), async (req: Request, r
           cost_per_unit, price_per_unit, margin_percent, notes, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        productId, batch_yield_grams, unit_weight_grams, units_produced,
-        total_ingredients_cost, total_operations_cost, total_batch_cost,
-        cost_per_unit, price_per_unit, margin_percent,
+        productId, batch_yield_grams, unit_weight_grams, computed.unitsProduced,
+        computed.totalIngredientsCost, computed.totalOperationsCost, computed.totalBatchCost,
+        computed.costPerUnit, price_per_unit, computed.marginPercent,
         notes ?? null, userId
       ]
     ) as any[];
@@ -174,6 +179,31 @@ router.delete('/:id', requireRole('admin'), async (req: Request, res: Response):
   }
 });
 
+// ── Helper: recalcula costos del lote desde los detalles ─────
+function computeBatchCosts(
+  ingredients: { name: string; amount: number }[],
+  operations:  { name: string; amount: number }[],
+  batchYieldGrams: number,
+  unitWeightGrams: number,
+  pricePerUnit: number,
+) {
+  const totalIngredientsCost = (ingredients ?? []).reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const totalOperationsCost  = (operations  ?? []).reduce((s, o) => s + (Number(o.amount) || 0), 0);
+  const totalBatchCost       = totalIngredientsCost + totalOperationsCost;
+  const unitsProduced        = unitWeightGrams > 0 ? Math.floor(batchYieldGrams / unitWeightGrams) : 0;
+  const costPerUnit          = unitsProduced > 0 ? totalBatchCost / unitsProduced : 0;
+  const marginPercent        = pricePerUnit > 0 ? ((pricePerUnit - costPerUnit) / pricePerUnit) * 100 : 0;
+
+  return {
+    totalIngredientsCost: Number(totalIngredientsCost.toFixed(2)),
+    totalOperationsCost:  Number(totalOperationsCost.toFixed(2)),
+    totalBatchCost:       Number(totalBatchCost.toFixed(2)),
+    unitsProduced,
+    costPerUnit:          Number(costPerUnit.toFixed(2)),
+    marginPercent:        Number(marginPercent.toFixed(2)),
+  };
+}
+
 // ── Helper: inserta ingredientes y operaciones de un lote ────
 async function insertBatchDetails(
   conn: any,
@@ -223,12 +253,17 @@ router.post('/:id/batches', requireRole('admin'), async (req: Request, res: Resp
   const productId = Number(req.params.id);
   const userId = req.user!.id;
   const {
-    batch_yield_grams, unit_weight_grams, units_produced,
-    total_ingredients_cost, total_operations_cost, total_batch_cost,
-    cost_per_unit, price_per_unit, margin_percent,
+    batch_yield_grams, unit_weight_grams,
+    price_per_unit,
     ingredients_detail, operations_detail,
-    notes, stock_delta
+    notes
   } = req.body;
+
+  // H4: recalcular costos en el backend, ignorar valores del cliente
+  const computed = computeBatchCosts(
+    ingredients_detail, operations_detail,
+    batch_yield_grams, unit_weight_grams, price_per_unit
+  );
 
   const conn = await pool.getConnection();
   try {
@@ -242,9 +277,9 @@ router.post('/:id/batches', requireRole('admin'), async (req: Request, res: Resp
           cost_per_unit, price_per_unit, margin_percent, notes, created_by)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        productId, batch_yield_grams, unit_weight_grams, units_produced,
-        total_ingredients_cost, total_operations_cost, total_batch_cost,
-        cost_per_unit, price_per_unit, margin_percent,
+        productId, batch_yield_grams, unit_weight_grams, computed.unitsProduced,
+        computed.totalIngredientsCost, computed.totalOperationsCost, computed.totalBatchCost,
+        computed.costPerUnit, price_per_unit, computed.marginPercent,
         notes ?? null, userId
       ]
     ) as any[];
@@ -260,8 +295,8 @@ router.post('/:id/batches', requireRole('admin'), async (req: Request, res: Resp
        SET price = ?, cost = ?, weight_grams = ?,
            stock = stock + ?, updated_by = ?
        WHERE id = ? AND deleted_at IS NULL`,
-      [price_per_unit, cost_per_unit, unit_weight_grams,
-       stock_delta ?? units_produced, userId, productId]
+      [price_per_unit, computed.costPerUnit, unit_weight_grams,
+       computed.unitsProduced, userId, productId]
     );
 
     await conn.commit();
