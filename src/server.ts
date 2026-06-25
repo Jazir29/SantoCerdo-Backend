@@ -50,6 +50,20 @@ app.use((_req, res) => {
 // ── Arranque ──────────────────────────────────────────────────
 app.listen(PORT, () => {
   console.log(`✅ Backend corriendo en http://localhost:${PORT}`);
+
+  // Auto-ping cada 12 min para evitar que Render duerma el servicio.
+  // Solo activo en producción y cuando SELF_URL está definida.
+  const selfUrl = process.env.SELF_URL;
+  if (selfUrl) {
+    setInterval(async () => {
+      try {
+        await fetch(`${selfUrl}/api/health`);
+      } catch (_) {
+        // silencioso — si falla, el cron externo lo despertará
+      }
+    }, 12 * 60 * 1000);
+    console.log(`🔁 Auto-ping activo → ${selfUrl}/api/health`);
+  }
 });
 
 
