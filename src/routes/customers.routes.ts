@@ -1,5 +1,7 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/db';
+import { validate } from '../middlewares/validate';
+import { customerSchema, addressSchema } from '../schemas';
 
 const router = Router();
 
@@ -77,7 +79,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/customers
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', validate(customerSchema), async (req: Request, res: Response): Promise<void> => {
   const { type, document_id, name, last_name, trade_name, email, phone } = req.body;
   const userId = req.user!.id;
 
@@ -104,7 +106,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // PUT /api/customers/:id
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', validate(customerSchema), async (req: Request, res: Response): Promise<void> => {
   const { type, document_id, name, last_name, trade_name, email, phone } = req.body;
   const userId = req.user!.id;
 
@@ -192,7 +194,7 @@ router.get('/:id/addresses', async (req: Request, res: Response): Promise<void> 
 });
 
 // POST /api/customers/:id/addresses
-router.post('/:id/addresses', async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/addresses', validate(addressSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, address, reference, department, province, district } = req.body;
   const userId = req.user!.id;
 
@@ -219,7 +221,7 @@ router.post('/:id/addresses', async (req: Request, res: Response): Promise<void>
 });
 
 // PUT /api/customers/:id/addresses/:addressId
-router.put('/:id/addresses/:addressId', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id/addresses/:addressId', validate(addressSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, address, reference, department, province, district } = req.body;
   const userId = req.user!.id;
 

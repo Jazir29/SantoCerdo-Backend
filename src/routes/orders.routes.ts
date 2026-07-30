@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/db';
 import { PoolConnection } from 'mysql2/promise';
+import { validate } from '../middlewares/validate';
+import { orderSchema, orderStatusSchema } from '../schemas';
 
 const router = Router();
 
@@ -133,7 +135,7 @@ router.get('/:id', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── POST /api/orders ─────────────────────────────────────────
-router.post('/', async (req: Request, res: Response): Promise<void> => {
+router.post('/', validate(orderSchema), async (req: Request, res: Response): Promise<void> => {
   const {
     customer_id, items, promotion_id,
     delivery_address, delivery_department, delivery_province,
@@ -236,7 +238,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // ── PUT /api/orders/:id/status ───────────────────────────────
-router.put('/:id/status', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id/status', validate(orderStatusSchema), async (req: Request, res: Response): Promise<void> => {
   const { status } = req.body;
   const userId = req.user!.id;
   const allowed = ['pending', 'shipped', 'completed', 'cancelled'];
@@ -259,7 +261,7 @@ router.put('/:id/status', async (req: Request, res: Response): Promise<void> => 
 });
 
 // ── PUT /api/orders/:id ──────────────────────────────────────
-router.put('/:id', async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', validate(orderSchema), async (req: Request, res: Response): Promise<void> => {
   const {
     customer_id, items, promotion_id,
     delivery_address, delivery_department, delivery_province,

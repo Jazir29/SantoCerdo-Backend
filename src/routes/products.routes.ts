@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/db';
 import { requireRole } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { productSchema, newProductWithBatchSchema, addBatchSchema } from '../schemas';
 
 const router = Router();
 
@@ -35,7 +37,7 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 });
 
 // POST /api/products
-router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), validate(productSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, description, price, cost, stock, category, image_url, weight_grams } = req.body;
   const userId = req.user!.id;
 
@@ -65,7 +67,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response): Prom
 });
 
 // POST /api/products/batches/new-product
-router.post('/batches/new-product', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/batches/new-product', requireRole('admin'), validate(newProductWithBatchSchema), async (req: Request, res: Response): Promise<void> => {
   const userId = req.user!.id;
   const {
     name, category,
@@ -142,7 +144,7 @@ router.post('/batches/new-product', requireRole('admin'), async (req: Request, r
 });
 
 // PUT /api/products/:id
-router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin'), validate(productSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, description, price, cost, stock, category, image_url, weight_grams } = req.body;
   const userId = req.user!.id;
 
@@ -249,7 +251,7 @@ async function getBatchWithDetails(conn: any, batchId: number) {
 }
 
 // POST /api/products/:id/batches
-router.post('/:id/batches', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/:id/batches', requireRole('admin'), validate(addBatchSchema), async (req: Request, res: Response): Promise<void> => {
   const productId = Number(req.params.id);
   const userId = req.user!.id;
   const {

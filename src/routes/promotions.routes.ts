@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import pool from '../config/db';
 import { requireRole } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { promotionSchema } from '../schemas';
 
 const router = Router();
 
@@ -54,7 +56,7 @@ router.get('/validate/:code', async (req: Request, res: Response): Promise<void>
 });
 
 // POST /api/promotions
-router.post('/', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/', requireRole('admin'), validate(promotionSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, code, type, value, start_date, end_date, active } = req.body;
   const userId = req.user!.id;
 
@@ -88,7 +90,7 @@ router.post('/', requireRole('admin'), async (req: Request, res: Response): Prom
 });
 
 // PUT /api/promotions/:id
-router.put('/:id', requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/:id', requireRole('admin'), validate(promotionSchema), async (req: Request, res: Response): Promise<void> => {
   const { name, code, type, value, start_date, end_date, active } = req.body;
   const userId = req.user!.id;
 

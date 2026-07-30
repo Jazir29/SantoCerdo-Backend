@@ -4,6 +4,8 @@ import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
 import pool from '../config/db';
 import { authMiddleware, requireRole } from '../middlewares/auth';
+import { validate } from '../middlewares/validate';
+import { createUserSchema, updateUserSchema, updateProfileSchema } from '../schemas';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -111,7 +113,7 @@ router.get('/users', authMiddleware, requireRole('admin'), async (req: Request, 
 });
 
 // ── POST /api/users ──────────────────────────────────────────
-router.post('/users', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.post('/users', authMiddleware, requireRole('admin'), validate(createUserSchema), async (req: Request, res: Response): Promise<void> => {
   const { username, password, first_name, last_name, role } = req.body;
   const createdBy = (req as any).user?.id;
 
@@ -154,7 +156,7 @@ router.post('/users', authMiddleware, requireRole('admin'), async (req: Request,
 });
 
 // ── PUT /api/users/:id ───────────────────────────────────────
-router.put('/users/:id', authMiddleware, requireRole('admin'), async (req: Request, res: Response): Promise<void> => {
+router.put('/users/:id', authMiddleware, requireRole('admin'), validate(updateUserSchema), async (req: Request, res: Response): Promise<void> => {
   const id        = Number(req.params.id);
   const updatedBy = (req as any).user?.id;
   const { username, first_name, last_name, role, password } = req.body;
@@ -188,7 +190,7 @@ router.put('/users/:id', authMiddleware, requireRole('admin'), async (req: Reque
 
 // ── PUT /api/users/:id/profile ───────────────────────────────
 // Mismo usuario editando su propio perfil — verifica contraseña actual
-router.put('/users/:id/profile', authMiddleware, async (req: Request, res: Response): Promise<void> => {
+router.put('/users/:id/profile', authMiddleware, validate(updateProfileSchema), async (req: Request, res: Response): Promise<void> => {
   const id = Number(req.params.id);
   const { username, first_name, last_name, currentPassword, newPassword } = req.body;
 
