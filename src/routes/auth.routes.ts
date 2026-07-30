@@ -70,11 +70,32 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 
     const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
 
-    res.json({ success: true, token, user: userPayload });
+    const isProd = process.env.NODE_ENV === 'production';
+    res.cookie('token', token, {
+      httpOnly: true,
+      secure: isProd,
+      sameSite: isProd ? 'none' : 'lax',
+      maxAge: 8 * 60 * 60 * 1000, // 8h en ms
+      path: '/',
+    });
+
+    res.json({ success: true, user: userPayload });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
   }
+});
+
+// ── POST /api/logout ─────────────────────────────────────────
+router.post('/logout', (_req, res) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.clearCookie('token', {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    path: '/',
+  });
+  res.json({ success: true });
 });
 
 // ── GET /api/users ───────────────────────────────────────────

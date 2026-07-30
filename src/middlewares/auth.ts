@@ -32,20 +32,18 @@ export const requireRole = (...roles: string[]) =>
   };
 
 export const authMiddleware = (req: Request, res: Response, next: NextFunction): void => {
-  const authHeader = req.headers['authorization'];
+  const token = req.cookies?.token;
 
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    res.status(401).json({ message: 'Token no proporcionado' });
+  if (!token) {
+    res.status(401).json({ message: 'No autenticado' });
     return;
   }
-
-  const token = authHeader.split(' ')[1];
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET) as AuthPayload;
     req.user = decoded;
     next();
   } catch {
-    res.status(401).json({ message: 'Token inválido o expirado' });
+    res.status(401).json({ message: 'Sesión inválida o expirada' });
   }
 };
