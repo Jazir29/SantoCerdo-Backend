@@ -70,11 +70,11 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 
     const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn } as jwt.SignOptions);
 
-    const isProd = process.env.NODE_ENV === 'production';
+    const secure = process.env.COOKIE_SECURE === 'true';
     res.cookie('token', token, {
       httpOnly: true,
-      secure: isProd,
-      sameSite: isProd ? 'none' : 'lax',
+      secure,
+      sameSite: secure ? 'none' : 'lax',
       maxAge: 8 * 60 * 60 * 1000, // 8h en ms
       path: '/',
     });
@@ -88,11 +88,11 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 
 // ── POST /api/logout ─────────────────────────────────────────
 router.post('/logout', (_req, res) => {
-  const isProd = process.env.NODE_ENV === 'production';
+  const secure = process.env.COOKIE_SECURE === 'true';
   res.clearCookie('token', {
     httpOnly: true,
-    secure: isProd,
-    sameSite: isProd ? 'none' : 'lax',
+    secure,
+    sameSite: secure ? 'none' : 'lax',
     path: '/',
   });
   res.json({ success: true });
