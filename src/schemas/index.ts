@@ -85,6 +85,11 @@ export const orderStatusSchema = z.object({
   status: z.enum(['pending', 'shipped', 'completed', 'cancelled']),
 });
 
+export const orderPaymentSchema = z.object({
+  payment_status: z.enum(['unpaid', 'partial', 'paid']),
+  payment_method: z.enum(['cash', 'transfer', 'yape', 'plin', 'other']).optional().nullable(),
+});
+
 // ── Promociones ───────────────────────────────────────────────
 export const promotionSchema = z.object({
   name:       z.string().min(1).max(255),

@@ -5,6 +5,7 @@ import cookieParser from 'cookie-parser';
 import dotenv from 'dotenv';
 
 import { authMiddleware } from './middlewares/auth';
+import { errorHandler }  from './middlewares/errorHandler';
 import authRoutes       from './routes/auth.routes';
 import productRoutes    from './routes/products.routes';
 import customerRoutes   from './routes/customers.routes';
@@ -12,6 +13,7 @@ import orderRoutes      from './routes/orders.routes';
 import promotionRoutes  from './routes/promotions.routes';
 import statsRoutes      from './routes/stats.routes';
 import batchesRouter from './routes/batches.routes';
+import stockRoutes   from './routes/stock.routes';
 
 
 dotenv.config();
@@ -37,7 +39,8 @@ app.use('/api/customers',  authMiddleware, customerRoutes);
 app.use('/api/orders',     authMiddleware, orderRoutes);
 app.use('/api/promotions', authMiddleware, promotionRoutes);
 app.use('/api/stats',      authMiddleware, statsRoutes);
-app.use('/api/batches', authMiddleware, batchesRouter);
+app.use('/api/batches',          authMiddleware, batchesRouter);
+app.use('/api/stock-movements', authMiddleware, stockRoutes);
 
 // ── Health check ──────────────────────────────────────────────
 app.get('/api/health', (_req, res) => {
@@ -48,6 +51,9 @@ app.get('/api/health', (_req, res) => {
 app.use((_req, res) => {
   res.status(404).json({ message: 'Ruta no encontrada' });
 });
+
+// ── Error handler centralizado ────────────────────────────────
+app.use(errorHandler);
 
 // ── Arranque ──────────────────────────────────────────────────
 app.listen(PORT, () => {
