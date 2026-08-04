@@ -77,7 +77,7 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
       path: '/',
     });
 
-    res.json({ success: true, user: userPayload });
+    res.json({ success: true, user: userPayload, token });
   } catch (error) {
     console.error('Login error:', error);
     res.status(500).json({ message: 'Error interno del servidor' });
