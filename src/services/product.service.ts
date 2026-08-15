@@ -223,7 +223,7 @@ export async function addBatch(
 
 export async function getBatchHistory(productId: number): Promise<any[]> {
   const [batches] = await pool.query(
-    `SELECT pb.*, u.name as created_by_name FROM production_batches pb LEFT JOIN users u ON pb.created_by = u.id WHERE pb.product_id = ? ORDER BY pb.created_at DESC`,
+    `SELECT pb.*, CONCAT(u.first_name, ' ', COALESCE(u.last_name, ''), IF(u.second_last_name IS NOT NULL AND u.second_last_name != '', CONCAT(' ', u.second_last_name), '')) AS created_by_name FROM production_batches pb LEFT JOIN users u ON pb.created_by = u.id WHERE pb.product_id = ? ORDER BY pb.created_at DESC`,
     [productId],
   ) as any[];
 

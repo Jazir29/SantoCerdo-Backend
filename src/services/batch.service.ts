@@ -13,7 +13,7 @@ export async function list(params: {
        pb.*,
        p.name  AS product_name,
        p.weight_grams AS product_weight_grams,
-       u.name  AS created_by_name
+       CONCAT(u.first_name, ' ', COALESCE(u.last_name, ''), IF(u.second_last_name IS NOT NULL AND u.second_last_name != '', CONCAT(' ', u.second_last_name), '')) AS created_by_name
      FROM production_batches pb
      JOIN products p ON pb.product_id = p.id
      LEFT JOIN users u ON pb.created_by = u.id

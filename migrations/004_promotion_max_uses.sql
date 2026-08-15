@@ -1,0 +1,3 @@
+ALTER TABLE promotions
+  ADD COLUMN max_uses INT NULL DEFAULT NULL AFTER active,
+  ADD COLUMN current_uses INT NOT NULL DEFAULT 0 AFTER max_uses;

@@ -34,7 +34,7 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 
   try {
     const [rows] = await pool.query(
-      'SELECT id, username, password, name, first_name, last_name, role FROM users WHERE username = ? AND deleted_at IS NULL',
+      'SELECT id, username, password, first_name, last_name, second_last_name, role FROM users WHERE username = ? AND deleted_at IS NULL',
       [username],
     ) as any[];
 
@@ -58,12 +58,12 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
 
     const expiresIn  = process.env.JWT_EXPIRES_IN || '8h';
     const userPayload = {
-      id:         user.id,
-      username:   user.username,
-      name:       user.name,
-      first_name: user.first_name || '',
-      last_name:  user.last_name  || '',
-      role:       user.role,
+      id:               user.id,
+      username:         user.username,
+      first_name:       user.first_name       || '',
+      last_name:        user.last_name        || '',
+      second_last_name: user.second_last_name || '',
+      role:             user.role,
     };
 
     const token = jwt.sign(userPayload, JWT_SECRET, { expiresIn } as jwt.SignOptions);

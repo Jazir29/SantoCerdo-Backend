@@ -66,7 +66,7 @@ export async function list(params: {
        sm.created_at,
        sm.created_by,
        p.name  AS product_name,
-       CONCAT(u.first_name, ' ', COALESCE(u.last_name, '')) AS created_by_name
+       CONCAT(u.first_name, ' ', COALESCE(u.last_name, ''), IF(u.second_last_name IS NOT NULL AND u.second_last_name != '', CONCAT(' ', u.second_last_name), '')) AS created_by_name
      FROM stock_movements sm
      LEFT JOIN products p ON sm.product_id = p.id
      LEFT JOIN users    u ON sm.created_by  = u.id

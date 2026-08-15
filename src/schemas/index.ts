@@ -99,29 +99,33 @@ export const promotionSchema = z.object({
   start_date: z.string().datetime({ offset: true }).optional().nullable().or(z.literal('')),
   end_date:   z.string().datetime({ offset: true }).optional().nullable().or(z.literal('')),
   active:     z.union([z.boolean(), z.number().int().min(0).max(1)]).optional().default(1),
+  max_uses:   z.number().int().min(1).optional().nullable(),
 });
 
 // ── Usuarios ──────────────────────────────────────────────────
 export const createUserSchema = z.object({
-  username:   z.string().min(3).max(100),
-  password:   z.string().min(6).max(255),
-  first_name: z.string().min(1).max(100),
-  last_name:  z.string().min(1).max(100),
-  role:       z.enum(['admin', 'user']),
+  username:         z.string().min(3).max(100),
+  password:         z.string().min(6).max(255),
+  first_name:       z.string().min(1).max(100),
+  last_name:        z.string().min(1).max(100),
+  second_last_name: z.string().max(100).optional().nullable(),
+  role:             z.enum(['admin', 'user']),
 });
 
 export const updateUserSchema = z.object({
-  username:   z.string().min(3).max(100),
-  first_name: z.string().min(1).max(100),
-  last_name:  z.string().min(1).max(100),
-  role:       z.enum(['admin', 'user']),
-  password:   z.string().min(6).max(255).optional(),
+  username:         z.string().min(3).max(100),
+  first_name:       z.string().min(1).max(100),
+  last_name:        z.string().min(1).max(100),
+  second_last_name: z.string().max(100).optional().nullable(),
+  role:             z.enum(['admin', 'user']),
+  password:         z.string().min(6).max(255).optional(),
 });
 
 export const updateProfileSchema = z.object({
-  username:        z.string().min(3).max(100).optional(),
-  first_name:      z.string().min(1).max(100).optional(),
-  last_name:       z.string().min(1).max(100).optional(),
-  currentPassword: z.string().optional(),
-  newPassword:     z.string().min(6).max(255).optional(),
+  username:         z.string().min(3).max(100).optional(),
+  first_name:       z.string().min(1).max(100).optional(),
+  last_name:        z.string().min(1).max(100).optional(),
+  second_last_name: z.string().max(100).optional().nullable(),
+  currentPassword:  z.string().optional(),
+  newPassword:      z.string().min(6).max(255).optional(),
 });

@@ -28,12 +28,18 @@ async function applyPromotion(
   if (!promotionId) return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
 
   const [rows] = await conn.query(
-    `SELECT * FROM promotions WHERE id = ? AND active = 1 AND deleted_at IS NULL AND (start_date IS NULL OR start_date <= NOW()) AND (end_date IS NULL OR end_date >= NOW())`,
+    `SELECT * FROM promotions WHERE id = ? AND active = 1 AND deleted_at IS NULL
+     AND (start_date IS NULL OR start_date <= NOW())
+     AND (end_date IS NULL OR end_date >= NOW())`,
     [promotionId],
   ) as any[];
 
   const promo = rows[0];
   if (!promo) return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
+
+  if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) {
+    return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
+  }
 
   const discount = promo.type === 'percentage'
     ? subtotal * (promo.value / 100)
@@ -44,6 +50,20 @@ async function applyPromotion(
     discountAmount: discount,
     validPromoId:   promotionId,
   };
+}
+
+async function incrementPromoUses(conn: PoolConnection, promoId: number): Promise<void> {
+  await conn.query(
+    'UPDATE promotions SET current_uses = current_uses + 1 WHERE id = ?',
+    [promoId],
+  );
+}
+
+async function decrementPromoUses(conn: PoolConnection, promoId: number): Promise<void> {
+  await conn.query(
+    'UPDATE promotions SET current_uses = GREATEST(0, current_uses - 1) WHERE id = ?',
+    [promoId],
+  );
 }
 
 // ── Public service methods ────────────────────────────────────
@@ -179,6 +199,7 @@ export async function create(
     ) as any[];
 
     const orderId = orderResult.insertId;
+    if (validPromoId) await incrementPromoUses(conn, validPromoId);
 
     for (const item of items) {
       const unitPrice = priceMap.get(Number(item.product_id))!;
@@ -236,6 +257,12 @@ export async function update(
   try {
     await conn.beginTransaction();
 
+    const [orderRows] = await conn.query(
+      'SELECT promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id],
+    ) as any[];
+    if (!orderRows[0]) throw new AppError(404, 'Orden no encontrada');
+    const oldPromoId: number | null = orderRows[0].promotion_id ?? null;
+
     const [oldItems] = await conn.query(
       'SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id],
     ) as any[];
@@ -268,6 +295,11 @@ export async function update(
       [customer_id, finalTotal, delivery_address, delivery_department, delivery_province,
        delivery_district, delivery_reference, validPromoId, discountAmount, userId, id],
     );
+
+    if (oldPromoId !== validPromoId) {
+      if (oldPromoId) await decrementPromoUses(conn, oldPromoId);
+      if (validPromoId) await incrementPromoUses(conn, validPromoId);
+    }
 
     for (const item of items) {
       const unitPrice = priceMap.get(Number(item.product_id))!;
@@ -325,7 +357,7 @@ export async function cancel(id: number, userId: number): Promise<void> {
     await conn.beginTransaction();
 
     const [orderRows] = await conn.query(
-      'SELECT status FROM orders WHERE id = ? AND deleted_at IS NULL', [id],
+      'SELECT status, promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL', [id],
     ) as any[];
 
     if (!orderRows[0]) throw new AppError(404, 'Orden no encontrada');
@@ -340,6 +372,10 @@ export async function cancel(id: number, userId: number): Promise<void> {
           [item.quantity, userId, item.product_id],
         );
         await recordMovement(conn, item.product_id, item.quantity, 'order_cancel', Number(id), 'order', userId);
+      }
+
+      if (orderRows[0].promotion_id) {
+        await decrementPromoUses(conn, orderRows[0].promotion_id);
       }
     }
 
