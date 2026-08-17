@@ -109,7 +109,7 @@ export const createUserSchema = z.object({
   first_name:       z.string().min(1).max(100),
   last_name:        z.string().min(1).max(100),
   second_last_name: z.string().max(100).optional().nullable(),
-  role:             z.enum(['admin', 'user']),
+  role:             z.enum(['admin', 'vendedor', 'produccion']),
 });
 
 export const updateUserSchema = z.object({
@@ -117,7 +117,7 @@ export const updateUserSchema = z.object({
   first_name:       z.string().min(1).max(100),
   last_name:        z.string().min(1).max(100),
   second_last_name: z.string().max(100).optional().nullable(),
-  role:             z.enum(['admin', 'user']),
+  role:             z.enum(['admin', 'vendedor', 'produccion']),
   password:         z.string().min(6).max(255).optional(),
 });
 
