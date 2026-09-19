@@ -7,6 +7,7 @@ import { authMiddleware, requireRole } from '../middlewares/auth';
 import { validate } from '../middlewares/validate';
 import { createUserSchema, updateUserSchema, updateProfileSchema } from '../schemas';
 import * as UserController from '../controllers/user.controller';
+import logger from '../config/logger';
 
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -44,13 +45,12 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
       return;
     }
 
-    let isValid = false;
-    if (user.password.startsWith('$2')) {
-      isValid = await bcrypt.compare(password, user.password);
-    } else {
-      isValid = password === user.password;
+    if (!user.password.startsWith('$2')) {
+      res.status(401).json({ success: false, message: 'Credenciales inválidas' });
+      return;
     }
 
+    const isValid = await bcrypt.compare(password, user.password);
     if (!isValid) {
       res.status(401).json({ success: false, message: 'Credenciales inválidas' });
       return;
@@ -77,9 +77,9 @@ router.post('/login', loginLimiter, async (req: Request, res: Response): Promise
       path: '/',
     });
 
-    res.json({ success: true, user: userPayload, token });
+    res.json({ success: true, user: userPayload });
   } catch (error) {
-    console.error('Login error:', error);
+    logger.error({ err: error }, 'Login error');
     res.status(500).json({ message: 'Error interno del servidor' });
   }
 });

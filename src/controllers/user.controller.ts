@@ -2,9 +2,11 @@ import { Request, Response } from 'express';
 import * as UserService from '../services/user.service';
 import { asyncHandler } from '../middlewares/errorHandler';
 
-export const getAll = asyncHandler(async (_req: Request, res: Response) => {
-  const users = await UserService.getAll();
-  res.json(users);
+export const getAll = asyncHandler(async (req: Request, res: Response) => {
+  const page  = Math.max(Number(req.query.page)  || 1, 1);
+  const limit = Math.min(Number(req.query.limit) || 50, 200);
+  const data = await UserService.getAll(page, limit);
+  res.json(data);
 });
 
 export const create = asyncHandler(async (req: Request, res: Response) => {

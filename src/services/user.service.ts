@@ -2,11 +2,17 @@ import pool from '../config/db';
 import bcrypt from 'bcryptjs';
 import { AppError } from './errors';
 
-export async function getAll(): Promise<any[]> {
-  const [rows] = await pool.query(
-    'SELECT id, username, first_name, last_name, second_last_name, role FROM users WHERE deleted_at IS NULL ORDER BY id ASC',
-  ) as any[];
-  return rows;
+export async function getAll(page = 1, limit = 50): Promise<{ data: any[]; total: number; totalPages: number; page: number }> {
+  const offset = (page - 1) * limit;
+  const [[rows], [countRows]] = await Promise.all([
+    pool.query(
+      'SELECT id, username, first_name, last_name, second_last_name, role FROM users WHERE deleted_at IS NULL ORDER BY id ASC LIMIT ? OFFSET ?',
+      [limit, offset],
+    ),
+    pool.query('SELECT COUNT(*) as total FROM users WHERE deleted_at IS NULL'),
+  ]) as any[];
+  const total = countRows[0].total;
+  return { data: rows, total, totalPages: Math.ceil(total / limit), page };
 }
 
 export async function create(
@@ -93,9 +99,6 @@ export async function updateProfile(
     if (!currentPassword) throw new AppError(400, 'Debes ingresar tu contraseña actual');
     const isValid = await bcrypt.compare(currentPassword, (rows as any[])[0].password);
     if (!isValid) throw new AppError(401, 'Contraseña actual incorrecta');
-  }
-
-  if (newPassword) {
     const hashed = await bcrypt.hash(newPassword, 10);
     await pool.query(
       'UPDATE users SET username=?, first_name=?, last_name=?, second_last_name=?, password=?, updated_by=? WHERE id=?',

@@ -1,5 +1,6 @@
 import { Request, Response, NextFunction, RequestHandler } from 'express';
 import { AppError } from '../services/errors';
+import logger from '../config/logger';
 
 type AsyncFn = (req: Request, res: Response, next: NextFunction) => Promise<void>;
 
@@ -18,6 +19,6 @@ export const errorHandler = (
     res.status(err.statusCode).json({ message: err.message });
     return;
   }
-  console.error(err);
+  logger.error({ err }, 'Unhandled error');
   res.status(500).json({ message: 'Error interno del servidor' });
 };

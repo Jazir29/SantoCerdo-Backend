@@ -1,70 +1,5 @@
 import pool from '../config/db';
-import { PoolConnection } from 'mysql2/promise';
 import { AppError } from './errors';
-import { recordMovement } from './stock.service';
-
-// ── Private helpers ───────────────────────────────────────────
-
-async function fetchPrices(
-  conn: PoolConnection,
-  productIds: number[],
-): Promise<Map<number, number>> {
-  if (!productIds.length) return new Map();
-  const placeholders = productIds.map(() => '?').join(',');
-  const [rows] = await conn.query(
-    `SELECT id, price FROM products WHERE id IN (${placeholders}) AND deleted_at IS NULL`,
-    productIds,
-  ) as any[];
-  const map = new Map<number, number>();
-  for (const row of rows) map.set(Number(row.id), Number(row.price));
-  return map;
-}
-
-async function applyPromotion(
-  conn: PoolConnection,
-  promotionId: number | null,
-  subtotal: number,
-): Promise<{ finalTotal: number; discountAmount: number; validPromoId: number | null }> {
-  if (!promotionId) return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
-
-  const [rows] = await conn.query(
-    `SELECT * FROM promotions WHERE id = ? AND active = 1 AND deleted_at IS NULL
-     AND (start_date IS NULL OR start_date <= NOW())
-     AND (end_date IS NULL OR end_date >= NOW())`,
-    [promotionId],
-  ) as any[];
-
-  const promo = rows[0];
-  if (!promo) return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
-
-  if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) {
-    return { finalTotal: subtotal, discountAmount: 0, validPromoId: null };
-  }
-
-  const discount = promo.type === 'percentage'
-    ? subtotal * (promo.value / 100)
-    : Number(promo.value);
-
-  return {
-    finalTotal:     Math.max(0, subtotal - discount),
-    discountAmount: discount,
-    validPromoId:   promotionId,
-  };
-}
-
-async function incrementPromoUses(conn: PoolConnection, promoId: number): Promise<void> {
-  await conn.query(
-    'UPDATE promotions SET current_uses = current_uses + 1 WHERE id = ?',
-    [promoId],
-  );
-}
-
-async function decrementPromoUses(conn: PoolConnection, promoId: number): Promise<void> {
-  await conn.query(
-    'UPDATE promotions SET current_uses = GREATEST(0, current_uses - 1) WHERE id = ?',
-    [promoId],
-  );
-}
 
 // ── Public service methods ────────────────────────────────────
 
@@ -159,77 +94,28 @@ export async function create(
     delivery_address, delivery_department, delivery_province,
     delivery_district, delivery_reference, new_address_to_save,
   } = data;
-
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    if (new_address_to_save?.save) {
-      const [countRows] = await conn.query(
-        'SELECT COUNT(*) as count FROM customer_addresses WHERE customer_id = ? AND deleted_at IS NULL',
-        [customer_id],
-      ) as any[];
-      const addressName = new_address_to_save.name || `Dirección ${countRows[0].count + 2}`;
-      await conn.query(
-        `INSERT INTO customer_addresses (customer_id, name, address, reference, department, province, district, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [customer_id, addressName, new_address_to_save.address, new_address_to_save.reference,
-         new_address_to_save.department, new_address_to_save.province, new_address_to_save.district,
-         userId, userId],
-      );
-    }
-
-    const productIds = [...new Set((items as any[]).map((i: any) => Number(i.product_id)))];
-    const priceMap = await fetchPrices(conn, productIds);
-    for (const item of items) {
-      if (!priceMap.has(Number(item.product_id))) {
-        throw new AppError(400, `Producto ${item.product_id} no encontrado`);
-      }
-    }
-
-    const subtotal: number = (items as any[]).reduce(
-      (acc: number, item: any) => acc + priceMap.get(Number(item.product_id))! * item.quantity, 0,
-    );
-    const { finalTotal, discountAmount, validPromoId } =
-      await applyPromotion(conn, promotion_id || null, subtotal);
-
-    const [orderResult] = await conn.query(
-      `INSERT INTO orders (customer_id, total_amount, status, created_at, delivery_address, delivery_department, delivery_province, delivery_district, delivery_reference, promotion_id, discount_amount, created_by, updated_by) VALUES (?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [customer_id, finalTotal, delivery_address, delivery_department, delivery_province,
-       delivery_district, delivery_reference, validPromoId, discountAmount, userId, userId],
+    const [results] = await pool.query(
+      'CALL sp_order_create(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        customer_id, userId, JSON.stringify(items),
+        promotion_id ?? null,
+        delivery_address ?? null, delivery_department ?? null,
+        delivery_province ?? null, delivery_district ?? null,
+        delivery_reference ?? null,
+        new_address_to_save?.save ? 1 : 0,
+        new_address_to_save?.name ?? null,
+        new_address_to_save?.address ?? null,
+        new_address_to_save?.reference ?? null,
+        new_address_to_save?.department ?? null,
+        new_address_to_save?.province ?? null,
+        new_address_to_save?.district ?? null,
+      ],
     ) as any[];
-
-    const orderId = orderResult.insertId;
-    if (validPromoId) await incrementPromoUses(conn, validPromoId);
-
-    for (const item of items) {
-      const unitPrice = priceMap.get(Number(item.product_id))!;
-
-      const [stockRows] = await conn.query(
-        'SELECT stock FROM products WHERE id = ? FOR UPDATE',
-        [item.product_id],
-      ) as any[];
-      if (!stockRows[0] || stockRows[0].stock < item.quantity) {
-        throw new AppError(400, `Stock insuficiente para el producto ${item.product_id}`);
-      }
-
-      await conn.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)`,
-        [orderId, item.product_id, item.quantity, unitPrice, userId, userId],
-      );
-      await conn.query(
-        'UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?',
-        [item.quantity, userId, item.product_id],
-      );
-      await recordMovement(conn, item.product_id, -item.quantity, 'order_create', orderId, 'order', userId);
-    }
-
-    await conn.commit();
-    return { orderId };
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
+    return { orderId: (results as any[][])[0][0].orderId };
+  } catch (err: any) {
+    const msg: string = err.sqlMessage || err.message || 'Error al crear la orden';
+    throw new AppError(400, msg);
   }
 }
 
@@ -247,92 +133,62 @@ export async function update(
   },
   userId: number,
 ): Promise<void> {
+  const [statusRows] = await pool.query(
+    'SELECT status FROM orders WHERE id = ? AND deleted_at IS NULL',
+    [id],
+  ) as any[];
+  const existing = (statusRows as any[])[0];
+  if (!existing) throw new AppError(404, 'Orden no encontrada');
+  if (existing.status === 'completed') throw new AppError(400, 'No se puede editar una orden completada');
+  if (existing.status === 'cancelled') throw new AppError(400, 'No se puede editar una orden cancelada');
+
   const {
     customer_id, items, promotion_id,
     delivery_address, delivery_department, delivery_province,
     delivery_district, delivery_reference,
   } = data;
-
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    const [orderRows] = await conn.query(
-      'SELECT promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL FOR UPDATE', [id],
-    ) as any[];
-    if (!orderRows[0]) throw new AppError(404, 'Orden no encontrada');
-    const oldPromoId: number | null = orderRows[0].promotion_id ?? null;
-
-    const [oldItems] = await conn.query(
-      'SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id],
-    ) as any[];
-    for (const item of oldItems) {
-      await conn.query(
-        'UPDATE products SET stock = stock + ?, updated_by = ? WHERE id = ?',
-        [item.quantity, userId, item.product_id],
-      );
-      await recordMovement(conn, item.product_id, item.quantity, 'order_update', Number(id), 'order', userId, 'Restauración por edición de orden');
-    }
-
-    await conn.query('DELETE FROM order_items WHERE order_id = ?', [id]);
-
-    const productIds = [...new Set((items as any[]).map((i: any) => Number(i.product_id)))];
-    const priceMap = await fetchPrices(conn, productIds);
-    for (const item of items) {
-      if (!priceMap.has(Number(item.product_id))) {
-        throw new AppError(400, `Producto ${item.product_id} no encontrado`);
-      }
-    }
-
-    const subtotal: number = (items as any[]).reduce(
-      (acc: number, item: any) => acc + priceMap.get(Number(item.product_id))! * item.quantity, 0,
+    await pool.query(
+      'CALL sp_order_update(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      [
+        id, customer_id, userId, JSON.stringify(items),
+        promotion_id ?? null,
+        delivery_address ?? null, delivery_department ?? null,
+        delivery_province ?? null, delivery_district ?? null,
+        delivery_reference ?? null,
+      ],
     );
-    const { finalTotal, discountAmount, validPromoId } =
-      await applyPromotion(conn, promotion_id || null, subtotal);
-
-    await conn.query(
-      `UPDATE orders SET customer_id = ?, total_amount = ?, delivery_address = ?, delivery_department = ?, delivery_province = ?, delivery_district = ?, delivery_reference = ?, promotion_id = ?, discount_amount = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
-      [customer_id, finalTotal, delivery_address, delivery_department, delivery_province,
-       delivery_district, delivery_reference, validPromoId, discountAmount, userId, id],
-    );
-
-    if (oldPromoId !== validPromoId) {
-      if (oldPromoId) await decrementPromoUses(conn, oldPromoId);
-      if (validPromoId) await incrementPromoUses(conn, validPromoId);
-    }
-
-    for (const item of items) {
-      const unitPrice = priceMap.get(Number(item.product_id))!;
-
-      const [stockRows] = await conn.query(
-        'SELECT stock FROM products WHERE id = ? FOR UPDATE',
-        [item.product_id],
-      ) as any[];
-      if (!stockRows[0] || stockRows[0].stock < item.quantity) {
-        throw new AppError(400, `Stock insuficiente para el producto ${item.product_id}`);
-      }
-
-      await conn.query(
-        `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by) VALUES (?, ?, ?, ?, ?, ?)`,
-        [id, item.product_id, item.quantity, unitPrice, userId, userId],
-      );
-      await conn.query(
-        'UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?',
-        [item.quantity, userId, item.product_id],
-      );
-      await recordMovement(conn, item.product_id, -item.quantity, 'order_update', Number(id), 'order', userId);
-    }
-
-    await conn.commit();
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
+  } catch (err: any) {
+    const msg: string = err.sqlMessage || err.message || 'Error al actualizar la orden';
+    throw new AppError(msg.includes('no encontrada') ? 404 : 400, msg);
   }
 }
 
+const VALID_TRANSITIONS: Record<string, string[]> = {
+  pending:   ['shipped', 'completed', 'cancelled'],
+  shipped:   ['completed', 'cancelled'],
+  completed: [],
+  cancelled: [],
+};
+
 export async function updateStatus(id: number, status: string, userId: number): Promise<void> {
+  const [rows] = await pool.query(
+    'SELECT status FROM orders WHERE id = ? AND deleted_at IS NULL',
+    [id],
+  ) as any[];
+  const order = (rows as any[])[0];
+  if (!order) throw new AppError(404, 'Orden no encontrada');
+
+  const allowed = VALID_TRANSITIONS[order.status] ?? [];
+  if (!allowed.includes(status)) {
+    throw new AppError(400, `No se puede cambiar el estado de '${order.status}' a '${status}'`);
+  }
+
+  if (status === 'cancelled') {
+    await cancel(id, userId);
+    return;
+  }
+
   await pool.query(
     'UPDATE orders SET status = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL',
     [status, userId, id],
@@ -344,6 +200,16 @@ export async function updatePayment(
   data: { payment_status: string; payment_method?: string | null },
   userId: number,
 ): Promise<void> {
+  const [rows] = await pool.query(
+    'SELECT status FROM orders WHERE id = ? AND deleted_at IS NULL',
+    [id],
+  ) as any[];
+  const order = (rows as any[])[0];
+  if (!order) throw new AppError(404, 'Orden no encontrada');
+  if (order.status === 'cancelled') {
+    throw new AppError(400, 'No se puede registrar un pago en una orden cancelada');
+  }
+
   const paid_at = data.payment_status === 'paid' ? new Date() : null;
   await pool.query(
     'UPDATE orders SET payment_status = ?, payment_method = ?, paid_at = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL',
@@ -352,43 +218,10 @@ export async function updatePayment(
 }
 
 export async function cancel(id: number, userId: number): Promise<void> {
-  const conn = await pool.getConnection();
   try {
-    await conn.beginTransaction();
-
-    const [orderRows] = await conn.query(
-      'SELECT status, promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL', [id],
-    ) as any[];
-
-    if (!orderRows[0]) throw new AppError(404, 'Orden no encontrada');
-
-    if (orderRows[0].status !== 'cancelled') {
-      const [items] = await conn.query(
-        'SELECT product_id, quantity FROM order_items WHERE order_id = ?', [id],
-      ) as any[];
-      for (const item of items) {
-        await conn.query(
-          'UPDATE products SET stock = stock + ?, updated_by = ? WHERE id = ?',
-          [item.quantity, userId, item.product_id],
-        );
-        await recordMovement(conn, item.product_id, item.quantity, 'order_cancel', Number(id), 'order', userId);
-      }
-
-      if (orderRows[0].promotion_id) {
-        await decrementPromoUses(conn, orderRows[0].promotion_id);
-      }
-    }
-
-    await conn.query(
-      `UPDATE orders SET status = 'cancelled', updated_by = ? WHERE id = ?`,
-      [userId, id],
-    );
-
-    await conn.commit();
-  } catch (error) {
-    await conn.rollback();
-    throw error;
-  } finally {
-    conn.release();
+    await pool.query('CALL sp_order_cancel(?, ?)', [id, userId]);
+  } catch (err: any) {
+    const msg: string = err.sqlMessage || err.message || 'Error al cancelar la orden';
+    throw new AppError(msg.includes('no encontrada') ? 404 : 400, msg);
   }
 }

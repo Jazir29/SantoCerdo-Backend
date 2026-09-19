@@ -28,8 +28,16 @@
     "helmet": "^8.2.0",
     "jsonwebtoken": "^9.0.2",
     "mysql2": "^3.9.7",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "swagger-ui-express": "^5.0.1",
     "ts-node-dev": "^2.0.0",
     "typescript": "^5.4.5",
     "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@types/pino-http": "^5.8.4",
+    "@types/swagger-ui-express": "^4.1.8",
+    "pino-pretty": "^13.1.3"
   }
 }

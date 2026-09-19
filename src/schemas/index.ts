@@ -13,6 +13,7 @@ export const productSchema = z.object({
   price:        positiveNum,
   cost:         nonNegNum,
   stock:        nonNegInt.optional().default(0),
+  min_stock:    nonNegInt.optional().default(20),
   weight_grams: positiveInt.optional().nullable(),
   category:     z.string().max(100).optional().nullable(),
   image_url:    z.string().url().max(500).optional().nullable().or(z.literal('')),
@@ -25,6 +26,7 @@ const batchDetailItem = z.object({
 
 export const newProductWithBatchSchema = z.object({
   name:               z.string().min(1).max(255),
+  description:        z.string().max(1000).optional().nullable(),
   category:           z.string().max(100).optional().nullable(),
   batch_yield_grams:  positiveInt,
   unit_weight_grams:  positiveInt,
@@ -35,12 +37,13 @@ export const newProductWithBatchSchema = z.object({
 });
 
 export const addBatchSchema = z.object({
-  batch_yield_grams:  positiveInt,
-  unit_weight_grams:  positiveInt,
-  price_per_unit:     positiveNum,
-  ingredients_detail: z.array(batchDetailItem).min(1),
-  operations_detail:  z.array(batchDetailItem).default([]),
-  notes:              z.string().max(1000).optional().nullable(),
+  batch_yield_grams:    positiveInt,
+  unit_weight_grams:    positiveInt,
+  price_per_unit:       positiveNum,
+  ingredients_detail:   z.array(batchDetailItem).min(1),
+  operations_detail:    z.array(batchDetailItem).default([]),
+  notes:                z.string().max(1000).optional().nullable(),
+  update_product_price: z.boolean().optional().default(false),
 });
 
 // ── Clientes ─────────────────────────────────────────────────
@@ -69,6 +72,16 @@ const orderItemSchema = z.object({
   quantity:   positiveInt,
 });
 
+const newAddressToSaveSchema = z.object({
+  save:       z.boolean().optional().default(false),
+  name:       z.string().max(200).optional().nullable(),
+  address:    z.string().max(500).optional().nullable(),
+  reference:  z.string().max(500).optional().nullable(),
+  department: z.string().max(100).optional().nullable(),
+  province:   z.string().max(100).optional().nullable(),
+  district:   z.string().max(100).optional().nullable(),
+}).optional().nullable();
+
 export const orderSchema = z.object({
   customer_id:          positiveInt,
   items:                z.array(orderItemSchema).min(1),
@@ -78,7 +91,7 @@ export const orderSchema = z.object({
   delivery_province:    z.string().max(100).optional().nullable(),
   delivery_district:    z.string().max(100).optional().nullable(),
   delivery_reference:   z.string().max(500).optional().nullable(),
-  new_address_to_save:  z.any().optional(),
+  new_address_to_save:  newAddressToSaveSchema,
 });
 
 export const orderStatusSchema = z.object({
@@ -103,13 +116,15 @@ export const promotionSchema = z.object({
 });
 
 // ── Usuarios ──────────────────────────────────────────────────
+const roleEnum = z.enum(['admin', 'vendedor', 'produccion']);
+
 export const createUserSchema = z.object({
   username:         z.string().min(3).max(100),
   password:         z.string().min(6).max(255),
   first_name:       z.string().min(1).max(100),
   last_name:        z.string().min(1).max(100),
   second_last_name: z.string().max(100).optional().nullable(),
-  role:             z.string().min(1).max(50),
+  role:             roleEnum,
 });
 
 export const updateUserSchema = z.object({
@@ -117,8 +132,27 @@ export const updateUserSchema = z.object({
   first_name:       z.string().min(1).max(100),
   last_name:        z.string().min(1).max(100),
   second_last_name: z.string().max(100).optional().nullable(),
-  role:             z.string().min(1).max(50),
+  role:             roleEnum,
   password:         z.string().min(6).max(255).optional(),
+});
+
+// ── Ajuste de stock ───────────────────────────────────────────
+export const stockAdjustmentSchema = z.object({
+  quantity: z.number().int().refine(n => n !== 0, { message: 'La cantidad no puede ser cero' }),
+  reason:   z.string().min(1).max(200),
+  notes:    z.string().max(500).optional().nullable(),
+});
+
+// ── Devoluciones ─────────────────────────────────────────────
+const returnItemSchema = z.object({
+  product_id: positiveInt,
+  quantity:   positiveInt,
+});
+
+export const returnSchema = z.object({
+  reason: z.string().min(1).max(200),
+  notes:  z.string().max(500).optional().nullable(),
+  items:  z.array(returnItemSchema).min(1),
 });
 
 export const updateProfileSchema = z.object({

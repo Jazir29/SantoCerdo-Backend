@@ -10,6 +10,7 @@ router.post('/',                validate(customerSchema), CustomerController.cre
 router.put('/:id',              validate(customerSchema), CustomerController.update);
 router.delete('/:id',                             CustomerController.remove);
 router.put('/:id/favorite-address',               CustomerController.updateFavoriteAddress);
+router.get('/:id/orders',                         CustomerController.getOrders);
 router.get('/:id/addresses',                      CustomerController.getAddresses);
 router.post('/:id/addresses',   validate(addressSchema),  CustomerController.createAddress);
 router.put('/:id/addresses/:addressId',  validate(addressSchema), CustomerController.updateAddress);

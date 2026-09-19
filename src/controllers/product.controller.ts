@@ -39,3 +39,8 @@ export const getBatchHistory = asyncHandler(async (req: Request, res: Response) 
   const batches = await ProductService.getBatchHistory(Number(req.params.id));
   res.json(batches);
 });
+
+export const adjustStock = asyncHandler(async (req: Request, res: Response) => {
+  await ProductService.adjustStock(Number(req.params.id), req.body, req.user!.id);
+  res.json({ success: true });
+});

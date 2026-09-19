@@ -21,12 +21,56 @@ async function getConnection() {
 }
 
 function splitStatements(sql: string): string[] {
-  return sql
-    .replace(/\/\*[\s\S]*?\*\//g, '')  // strip /* */ block comments
-    .replace(/^--[^\n]*$/gm, '')        // strip -- line comments
-    .split(';')
-    .map(s => s.trim())
-    .filter(s => s.length > 0);
+  sql = sql.replace(/\/\*[\s\S]*?\*\//g, '');
+
+  if (!/DELIMITER\s/i.test(sql)) {
+    return sql
+      .replace(/^--[^\n]*$/gm, '')
+      .split(';')
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+
+  // DELIMITER-aware split (required for CREATE PROCEDURE / FUNCTION / TRIGGER)
+  const results: string[] = [];
+  let delimiter = ';';
+  let buffer = '';
+
+  for (const rawLine of sql.split('\n')) {
+    const line = rawLine.trimEnd();
+    if (line.trimStart().startsWith('--')) continue;
+
+    const delimMatch = line.trim().match(/^DELIMITER\s+(\S+)$/i);
+    if (delimMatch) {
+      if (buffer.trim()) {
+        if (delimiter === ';') {
+          results.push(...buffer.split(';').map(s => s.trim()).filter(Boolean));
+        } else {
+          results.push(buffer.trim());
+        }
+        buffer = '';
+      }
+      delimiter = delimMatch[1];
+      continue;
+    }
+
+    buffer += line + '\n';
+
+    if (delimiter !== ';') {
+      const trimmed = buffer.trimEnd();
+      if (trimmed.endsWith(delimiter)) {
+        const stmt = trimmed.slice(0, trimmed.length - delimiter.length).trim();
+        if (stmt) results.push(stmt);
+        buffer = '';
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    results.push(...buffer.split(';').map(s => s.trim()).filter(Boolean));
+  }
+
+  return results.filter(Boolean);
 }
 
 async function ensureMigrationsTable(conn: mysql.Connection): Promise<void> {

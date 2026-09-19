@@ -29,6 +29,13 @@ export const remove = asyncHandler(async (req: Request, res: Response) => {
   res.json({ success: true });
 });
 
+export const getOrders = asyncHandler(async (req: Request, res: Response) => {
+  const page  = Math.max(Number(req.query.page)  || 1, 1);
+  const limit = Math.min(Number(req.query.limit) || 10, 100);
+  const data = await CustomerService.getOrders(Number(req.params.id), page, limit);
+  res.json(data);
+});
+
 export const getAddresses = asyncHandler(async (req: Request, res: Response) => {
   const addresses = await CustomerService.getAddresses(Number(req.params.id));
   res.json(addresses);

@@ -7,7 +7,7 @@ export async function recordMovement(
   conn: PoolConnection,
   productId: number,
   quantity: number,
-  type: 'batch' | 'order_create' | 'order_cancel' | 'order_update',
+  type: 'batch' | 'order_create' | 'order_cancel' | 'order_update' | 'adjustment',
   referenceId: number | null,
   referenceType: 'order' | 'batch' | null,
   userId: number,

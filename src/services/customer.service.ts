@@ -111,17 +111,50 @@ export async function update(
 ): Promise<void> {
   const { type, document_id, name, last_name, trade_name, email, phone } = data;
 
-  await pool.query(
+  const [result] = await pool.query(
     `UPDATE customers SET type = ?, document_id = ?, name = ?, last_name = ?, trade_name = ?, email = ?, phone = ?, updated_by = ? WHERE id = ? AND deleted_at IS NULL`,
     [type || 'natural', document_id ?? null, name, last_name ?? null, trade_name ?? null, email ?? null, phone ?? null, userId, id],
-  );
+  ) as any[];
+  if ((result as any).affectedRows === 0) throw new AppError(404, 'Cliente no encontrado');
 }
 
 export async function remove(id: number, userId: number): Promise<void> {
-  await pool.query(
+  const [result] = await pool.query(
     `UPDATE customers SET deleted_at = NOW(), deleted_by = ? WHERE id = ? AND deleted_at IS NULL`,
     [userId, id],
-  );
+  ) as any[];
+  if ((result as any).affectedRows === 0) throw new AppError(404, 'Cliente no encontrado');
+}
+
+export async function getOrders(
+  customerId: number,
+  page = 1,
+  limit = 10,
+): Promise<{ data: any[]; total: number; totalPages: number; page: number }> {
+  const offset = (page - 1) * limit;
+
+  const [[rows], [countRows]] = await Promise.all([
+    pool.query(
+      `SELECT o.id, o.status, o.payment_status, o.payment_method,
+              o.total_amount, o.discount_amount, o.promotion_id,
+              o.delivery_address, o.delivery_district,
+              o.paid_at, o.created_at,
+              p.name AS promotion_name, p.code AS promotion_code
+       FROM orders o
+       LEFT JOIN promotions p ON o.promotion_id = p.id
+       WHERE o.customer_id = ? AND o.deleted_at IS NULL
+       ORDER BY o.created_at DESC
+       LIMIT ? OFFSET ?`,
+      [customerId, limit, offset],
+    ),
+    pool.query(
+      'SELECT COUNT(*) as total FROM orders WHERE customer_id = ? AND deleted_at IS NULL',
+      [customerId],
+    ),
+  ]) as any[];
+
+  const total = countRows[0].total;
+  return { data: rows, total, totalPages: Math.ceil(total / limit), page };
 }
 
 export async function getAddresses(customerId: number): Promise<any[]> {
