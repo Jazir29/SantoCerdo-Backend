@@ -21,5 +21,3 @@ CREATE TABLE IF NOT EXISTS `order_return_items` (
   CONSTRAINT `fk_reti_return`  FOREIGN KEY (`return_id`)  REFERENCES `order_returns` (`id`) ON DELETE CASCADE,
   CONSTRAINT `fk_reti_product` FOREIGN KEY (`product_id`) REFERENCES `products`      (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
-INSERT INTO schema_migrations (version) VALUES ('015');

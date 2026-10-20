@@ -316,5 +316,3 @@ BEGIN
 END$
 
 DELIMITER ;
-
-INSERT INTO schema_migrations (version) VALUES ('013');

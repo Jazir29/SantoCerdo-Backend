@@ -49,5 +49,3 @@ INSERT INTO `catalogs` (`category`, `code`, `name`, `sort_order`) VALUES
   ('stock_adjustment_reason', 'conteo',      'Corrección de conteo', 4),
   ('stock_adjustment_reason', 'donacion',    'Donación',           5),
   ('stock_adjustment_reason', 'otro',        'Otro',               6);
-
-INSERT INTO schema_migrations (version) VALUES ('012');
