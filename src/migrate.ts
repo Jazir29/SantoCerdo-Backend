@@ -9,6 +9,7 @@ const MIGRATIONS_DIR = path.join(__dirname, '..', 'migrations');
 
 // Dedicated connection — multipleStatements OFF, one statement at a time
 async function getConnection() {
+  const useSSL = process.env.DB_SSL === 'true';
   return mysql.createConnection({
     host:     process.env.DB_HOST     || 'localhost',
     port:     Number(process.env.DB_PORT) || 3306,
@@ -17,6 +18,8 @@ async function getConnection() {
     database: process.env.DB_NAME     || 'santocerdo',
     charset:  'utf8mb4',
     timezone: 'Z',
+    multipleStatements: false,
+    ...(useSSL && { ssl: { minVersion: 'TLSv1.2' as const, rejectUnauthorized: true } }),
   });
 }
 
@@ -108,8 +111,10 @@ async function runMigration(conn: mysql.Connection, filename: string): Promise<v
     await conn.query(stmt);
   }
 
+  // INSERT IGNORE porque algunas migraciones (ej: 001_initial_schema) ya marcan
+  // otras como aplicadas en su propio cuerpo, para evitar re-ejecutarlas.
   await conn.query(
-    'INSERT INTO schema_migrations (name) VALUES (?)',
+    'INSERT IGNORE INTO schema_migrations (name) VALUES (?)',
     [filename]
   );
 
@@ -120,16 +125,23 @@ async function migrate(): Promise<void> {
   const conn = await getConnection();
   try {
     await ensureMigrationsTable(conn);
-    const applied = await getAppliedMigrations(conn);
-    const pending = getMigrationFiles().filter(f => !applied.has(f));
+    const files = getMigrationFiles();
 
-    if (pending.length === 0) {
+    const toRun: string[] = [];
+    for (const file of files) {
+      const applied = await getAppliedMigrations(conn);
+      if (!applied.has(file)) toRun.push(file);
+    }
+
+    if (toRun.length === 0) {
       console.log('[migrate] All migrations up to date.');
       return;
     }
 
-    console.log(`[migrate] Applying ${pending.length} migration(s)...`);
-    for (const file of pending) {
+    console.log(`[migrate] Applying ${toRun.length} migration(s)...`);
+    for (const file of files) {
+      const applied = await getAppliedMigrations(conn);
+      if (applied.has(file)) continue;
       await runMigration(conn, file);
     }
     console.log('[migrate] Done.');

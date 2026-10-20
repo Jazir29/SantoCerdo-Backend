@@ -67,6 +67,31 @@ export async function getById(id: number): Promise<{ order: any; items: any[] }>
   return { order: orderRows[0], items };
 }
 
+// Valida la promo y retorna { discount, promoId }; throw si inválida.
+async function applyPromotion(
+  conn: any,
+  promotionId: number,
+  subtotal: number,
+): Promise<{ discount: number; promoId: number }> {
+  const [rows]: any = await conn.query(
+    `SELECT type, value, max_uses, current_uses
+     FROM promotions
+     WHERE id = ? AND active = 1 AND deleted_at IS NULL
+       AND (start_date IS NULL OR start_date <= NOW())
+       AND (end_date   IS NULL OR end_date   >= NOW())`,
+    [promotionId],
+  );
+  const promo = rows[0];
+  if (!promo) throw new AppError(400, 'Promoción inválida o expirada');
+  if (promo.max_uses !== null && promo.current_uses >= promo.max_uses) {
+    throw new AppError(400, 'Esta promoción ha alcanzado su límite de usos');
+  }
+  const discount = promo.type === 'percentage'
+    ? subtotal * (Number(promo.value) / 100)
+    : Number(promo.value);
+  return { discount, promoId: promotionId };
+}
+
 export async function create(
   data: {
     customer_id: number;
@@ -94,28 +119,114 @@ export async function create(
     delivery_address, delivery_department, delivery_province,
     delivery_district, delivery_reference, new_address_to_save,
   } = data;
+
+  const conn = await pool.getConnection();
   try {
-    const [results] = await pool.query(
-      'CALL sp_order_create(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    await conn.beginTransaction();
+
+    // Guardar nueva dirección si se pidió
+    if (new_address_to_save?.save && new_address_to_save.address) {
+      const [[cntRow]]: any = await conn.query(
+        `SELECT COUNT(*) AS c FROM customer_addresses WHERE customer_id = ? AND deleted_at IS NULL`,
+        [customer_id],
+      );
+      const addrName = new_address_to_save.name && new_address_to_save.name.trim() !== ''
+        ? new_address_to_save.name
+        : `Dirección ${cntRow.c + 2}`;
+      await conn.query(
+        `INSERT INTO customer_addresses
+          (customer_id, name, address, reference, department, province, district, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
+          customer_id, addrName, new_address_to_save.address,
+          new_address_to_save.reference ?? null,
+          new_address_to_save.department ?? null,
+          new_address_to_save.province ?? null,
+          new_address_to_save.district ?? null,
+          userId, userId,
+        ],
+      );
+    }
+
+    // Primera pasada: validar stock y precios, calcular subtotal
+    const priceMap = new Map<number, number>();
+    let subtotal = 0;
+    for (const item of items) {
+      const [prodRows]: any = await conn.query(
+        `SELECT price, stock FROM products WHERE id = ? AND deleted_at IS NULL FOR UPDATE`,
+        [item.product_id],
+      );
+      const prod = prodRows[0];
+      if (!prod) throw new AppError(400, `Producto ${item.product_id} no encontrado`);
+      if (prod.stock < item.quantity) {
+        throw new AppError(400, `Stock insuficiente para el producto ${item.product_id}`);
+      }
+      priceMap.set(item.product_id, Number(prod.price));
+      subtotal += Number(prod.price) * item.quantity;
+    }
+
+    // Promoción
+    let discount = 0;
+    let validPromoId: number | null = null;
+    if (promotion_id) {
+      const result = await applyPromotion(conn, promotion_id, subtotal);
+      discount = result.discount;
+      validPromoId = result.promoId;
+    }
+
+    const total = Math.max(0, subtotal - discount);
+
+    // Insertar orden
+    const [orderResult]: any = await conn.query(
+      `INSERT INTO orders
+        (customer_id, total_amount, status, created_at,
+         delivery_address, delivery_department, delivery_province,
+         delivery_district, delivery_reference,
+         promotion_id, discount_amount, created_by, updated_by)
+       VALUES (?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
-        customer_id, userId, JSON.stringify(items),
-        promotion_id ?? null,
+        customer_id, total,
         delivery_address ?? null, delivery_department ?? null,
         delivery_province ?? null, delivery_district ?? null,
         delivery_reference ?? null,
-        new_address_to_save?.save ? 1 : 0,
-        new_address_to_save?.name ?? null,
-        new_address_to_save?.address ?? null,
-        new_address_to_save?.reference ?? null,
-        new_address_to_save?.department ?? null,
-        new_address_to_save?.province ?? null,
-        new_address_to_save?.district ?? null,
+        validPromoId, discount, userId, userId,
       ],
-    ) as any[];
-    return { orderId: (results as any[][])[0][0].orderId };
-  } catch (err: any) {
-    const msg: string = err.sqlMessage || err.message || 'Error al crear la orden';
-    throw new AppError(400, msg);
+    );
+    const orderId = orderResult.insertId;
+
+    if (validPromoId !== null) {
+      await conn.query(
+        `UPDATE promotions SET current_uses = current_uses + 1 WHERE id = ?`,
+        [validPromoId],
+      );
+    }
+
+    // Segunda pasada: insertar items, descontar stock, registrar movimientos
+    for (const item of items) {
+      const price = priceMap.get(item.product_id)!;
+      await conn.query(
+        `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [orderId, item.product_id, item.quantity, price, userId, userId],
+      );
+      await conn.query(
+        `UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?`,
+        [item.quantity, userId, item.product_id],
+      );
+      await conn.query(
+        `INSERT INTO stock_movements (product_id, quantity, type, reference_id, reference_type, created_by)
+         VALUES (?, ?, 'order_create', ?, 'order', ?)`,
+        [item.product_id, -item.quantity, orderId, userId],
+      );
+    }
+
+    await conn.commit();
+    return { orderId };
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
 
@@ -147,20 +258,121 @@ export async function update(
     delivery_address, delivery_department, delivery_province,
     delivery_district, delivery_reference,
   } = data;
+
+  const conn = await pool.getConnection();
   try {
-    await pool.query(
-      'CALL sp_order_update(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+    await conn.beginTransaction();
+
+    const [[orderRow]]: any = await conn.query(
+      `SELECT promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL FOR UPDATE`,
+      [id],
+    );
+    const oldPromo: number | null = orderRow?.promotion_id ?? null;
+
+    // Restaurar stock de los items anteriores
+    const [oldItems]: any = await conn.query(
+      `SELECT product_id, quantity FROM order_items WHERE order_id = ?`,
+      [id],
+    );
+    for (const old of oldItems) {
+      await conn.query(
+        `UPDATE products SET stock = stock + ?, updated_by = ? WHERE id = ?`,
+        [old.quantity, userId, old.product_id],
+      );
+      await conn.query(
+        `INSERT INTO stock_movements (product_id, quantity, type, reference_id, reference_type, notes, created_by)
+         VALUES (?, ?, 'order_update', ?, 'order', 'Restauración por edición de orden', ?)`,
+        [old.product_id, old.quantity, id, userId],
+      );
+    }
+
+    await conn.query(`DELETE FROM order_items WHERE order_id = ?`, [id]);
+
+    // Validar nuevos items y calcular subtotal
+    const priceMap = new Map<number, number>();
+    let subtotal = 0;
+    for (const item of items) {
+      const [prodRows]: any = await conn.query(
+        `SELECT price, stock FROM products WHERE id = ? AND deleted_at IS NULL FOR UPDATE`,
+        [item.product_id],
+      );
+      const prod = prodRows[0];
+      if (!prod) throw new AppError(400, `Producto ${item.product_id} no encontrado`);
+      if (prod.stock < item.quantity) {
+        throw new AppError(400, `Stock insuficiente para el producto ${item.product_id}`);
+      }
+      priceMap.set(item.product_id, Number(prod.price));
+      subtotal += Number(prod.price) * item.quantity;
+    }
+
+    // Promoción
+    let discount = 0;
+    let validPromoId: number | null = null;
+    if (promotion_id) {
+      const result = await applyPromotion(conn, promotion_id, subtotal);
+      discount = result.discount;
+      validPromoId = result.promoId;
+    }
+
+    const total = Math.max(0, subtotal - discount);
+
+    await conn.query(
+      `UPDATE orders
+       SET customer_id = ?, total_amount = ?,
+           delivery_address = ?, delivery_department = ?, delivery_province = ?,
+           delivery_district = ?, delivery_reference = ?,
+           promotion_id = ?, discount_amount = ?, updated_by = ?
+       WHERE id = ? AND deleted_at IS NULL`,
       [
-        id, customer_id, userId, JSON.stringify(items),
-        promotion_id ?? null,
+        customer_id, total,
         delivery_address ?? null, delivery_department ?? null,
         delivery_province ?? null, delivery_district ?? null,
         delivery_reference ?? null,
+        validPromoId, discount, userId, id,
       ],
     );
-  } catch (err: any) {
-    const msg: string = err.sqlMessage || err.message || 'Error al actualizar la orden';
-    throw new AppError(msg.includes('no encontrada') ? 404 : 400, msg);
+
+    // Ajustar usos de promo si cambió
+    if (oldPromo !== validPromoId) {
+      if (oldPromo !== null) {
+        await conn.query(
+          `UPDATE promotions SET current_uses = GREATEST(0, current_uses - 1) WHERE id = ?`,
+          [oldPromo],
+        );
+      }
+      if (validPromoId !== null) {
+        await conn.query(
+          `UPDATE promotions SET current_uses = current_uses + 1 WHERE id = ?`,
+          [validPromoId],
+        );
+      }
+    }
+
+    // Insertar nuevos items, descontar stock
+    for (const item of items) {
+      const price = priceMap.get(item.product_id)!;
+      await conn.query(
+        `INSERT INTO order_items (order_id, product_id, quantity, price, created_by, updated_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+        [id, item.product_id, item.quantity, price, userId, userId],
+      );
+      await conn.query(
+        `UPDATE products SET stock = stock - ?, updated_by = ? WHERE id = ?`,
+        [item.quantity, userId, item.product_id],
+      );
+      await conn.query(
+        `INSERT INTO stock_movements (product_id, quantity, type, reference_id, reference_type, created_by)
+         VALUES (?, ?, 'order_update', ?, 'order', ?)`,
+        [item.product_id, -item.quantity, id, userId],
+      );
+    }
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
 
@@ -218,10 +430,51 @@ export async function updatePayment(
 }
 
 export async function cancel(id: number, userId: number): Promise<void> {
+  const conn = await pool.getConnection();
   try {
-    await pool.query('CALL sp_order_cancel(?, ?)', [id, userId]);
-  } catch (err: any) {
-    const msg: string = err.sqlMessage || err.message || 'Error al cancelar la orden';
-    throw new AppError(msg.includes('no encontrada') ? 404 : 400, msg);
+    await conn.beginTransaction();
+
+    const [[order]]: any = await conn.query(
+      `SELECT status, promotion_id FROM orders WHERE id = ? AND deleted_at IS NULL FOR UPDATE`,
+      [id],
+    );
+    if (!order) throw new AppError(404, 'Orden no encontrada');
+
+    if (order.status !== 'cancelled') {
+      const [items]: any = await conn.query(
+        `SELECT product_id, quantity FROM order_items WHERE order_id = ?`,
+        [id],
+      );
+      for (const item of items) {
+        await conn.query(
+          `UPDATE products SET stock = stock + ?, updated_by = ? WHERE id = ?`,
+          [item.quantity, userId, item.product_id],
+        );
+        await conn.query(
+          `INSERT INTO stock_movements (product_id, quantity, type, reference_id, reference_type, created_by)
+           VALUES (?, ?, 'order_cancel', ?, 'order', ?)`,
+          [item.product_id, item.quantity, id, userId],
+        );
+      }
+
+      if (order.promotion_id !== null) {
+        await conn.query(
+          `UPDATE promotions SET current_uses = GREATEST(0, current_uses - 1) WHERE id = ?`,
+          [order.promotion_id],
+        );
+      }
+    }
+
+    await conn.query(
+      `UPDATE orders SET status = 'cancelled', updated_by = ? WHERE id = ?`,
+      [userId, id],
+    );
+
+    await conn.commit();
+  } catch (err) {
+    await conn.rollback();
+    throw err;
+  } finally {
+    conn.release();
   }
 }
